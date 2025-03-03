@@ -10,29 +10,39 @@ Function Invoke-ExecStartManagedFolderAssistant {
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    $User = $request.headers.'x-ms-client-principal'
-    $Tenant = $Request.query.TenantFilter
-    Write-LogMessage -user $User -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
-    $Results = [System.Collections.Generic.List[Object]]::new()
+    $APIName = $Request.Params.CIPPEndpoint
+    $Headers = $Request.Headers
+    Write-LogMessage -Headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
 
     # Interact with query parameters or the body of the request.
+    $Tenant = $Request.Query.tenantFilter ?? $Request.Body.tenantFilter
+    $ID = $Request.Query.Id ?? $Request.Body.Id
+    $UserPrincipalName = $Request.Body.UserPrincipalName
+    $Identity = $ID ?? $UserPrincipalName
+    $ShownName = $UserPrincipalName ?? $ID
+
+
+    $ExoParams = @{
+        Identity          = $Identity
+        AggMailboxCleanup = $true
+        FullCrawl         = $true
+    }
 
     try {
-        $null = New-ExoRequest -tenantid $Tenant -cmdlet 'Start-ManagedFolderAssistant' -cmdparams @{Identity = $Request.query.id }
-        $Results.Add("Successfully started Managed Folder Assistant for mailbox $($Request.query.id).")
+        $null = New-ExoRequest -tenantid $Tenant -cmdlet 'Start-ManagedFolderAssistant' -cmdParams $ExoParams
+        $Result = "Successfully started Managed Folder Assistant for mailbox $($ShownName)."
+        $Severity = 'Info'
         $StatusCode = [HttpStatusCode]::OK
     } catch {
         $ErrorMessage = Get-CippException -Exception $_
-        Write-LogMessage -user $User -API $APINAME -tenant $Tenant -message "Failed to create room: $($MailboxObject.DisplayName). Error: $($ErrorMessage.NormalizedError)" -Sev 'Error' -LogData $ErrorMessage
-        $Results.Add("Failed to start Managed Folder Assistant for mailbox $($Request.query.id). Error: $($ErrorMessage.NormalizedError)")
-        $StatusCode = [HttpStatusCode]::Forbidden
+        $Result = "Failed to start Managed Folder Assistant for mailbox $($ShownName). Error: $($ErrorMessage.NormalizedError)"
+        $Severity = 'Error'
+        $StatusCode = [HttpStatusCode]::InternalServerError
+    } finally {
+        Write-LogMessage -Headers $Headers -API $APIName -tenant $Tenant -message $Result -Sev $Severity -LogData $ErrorMessage
     }
 
-    $Body = [pscustomobject] @{ 'Results' = @($Results) }
+    $Body = [pscustomobject] @{ 'Results' = $Result }
     # Associate values to output bindings by calling 'Push-OutputBinding'.
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
             StatusCode = $StatusCode
