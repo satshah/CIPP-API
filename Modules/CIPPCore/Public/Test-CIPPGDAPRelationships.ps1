@@ -3,7 +3,7 @@ function Test-CIPPGDAPRelationships {
     param (
         $TenantFilter,
         $APIName = 'Access Check',
-        $ExecutingUser
+        $Headers
     )
 
     $GDAPissues = [System.Collections.Generic.List[object]]@()
@@ -57,12 +57,14 @@ function Test-CIPPGDAPRelationships {
         )
         $RoleAssignableGroups = $SAMUserMemberships | Where-Object { $_.isAssignableToRole }
         $NestedGroups = foreach ($Group in $RoleAssignableGroups) {
+            Write-Information "Getting nested group memberships for $($Group.displayName)"
             New-GraphGetRequest -uri "https://graph.microsoft.com/beta/groups/$($Group.id)/memberOf?`$select=id,displayName" -NoAuthCheck $true
         }
         foreach ($Group in $ExpectedGroups) {
             $GroupFound = $false
             foreach ($Membership in ($SAMUserMemberships + $NestedGroups)) {
-                if ($Membership.displayName -match $Group -and (($CIPPGroupCount -gt 0 -and $Group -match 'M365 GDAP') -or $Group -notmatch 'M365 GDAP')) {
+                if ($Membership.displayName -match $Group) {
+                    Write-Information "Found $Group in group memberships"
                     $GroupFound = $true
                 }
             }
@@ -95,7 +97,7 @@ function Test-CIPPGDAPRelationships {
 
     } catch {
         $ErrorMessage = Get-CippException -Exception $_
-        Write-LogMessage -user $ExecutingUser -API $APINAME -message "Failed to run GDAP check for $($TenantFilter): $($ErrorMessage.NormalizedError)" -Sev 'Error' -LogData $ErrorMessage
+        Write-LogMessage -headers $Headers -API $APINAME -message "Failed to run GDAP check for $($TenantFilter): $($ErrorMessage.NormalizedError)" -Sev 'Error' -LogData $ErrorMessage
     }
 
     $GDAPRelationships = [PSCustomObject]@{
@@ -107,6 +109,7 @@ function Test-CIPPGDAPRelationships {
 
     $Table = Get-CIPPTable -TableName AccessChecks
     $Data = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq 'AccessCheck' and RowKey eq 'GDAPRelationships'"
+
     if ($Data) {
         $Data.Data = [string](ConvertTo-Json -InputObject $GDAPRelationships -Depth 10 -Compress)
     } else {
@@ -116,7 +119,9 @@ function Test-CIPPGDAPRelationships {
             Data         = [string](ConvertTo-Json -InputObject $GDAPRelationships -Depth 10 -Compress)
         }
     }
-    Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
+    try {
+        Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
+    } catch {}
 
     return $GDAPRelationships
 }
