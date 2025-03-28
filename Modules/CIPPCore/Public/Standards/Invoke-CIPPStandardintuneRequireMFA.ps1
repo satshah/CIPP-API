@@ -13,16 +13,17 @@ function Invoke-CIPPStandardintuneRequireMFA {
         CAT
             Intune Standards
         TAG
-            "mediumimpact"
         IMPACT
             Medium Impact
+        ADDEDDATE
+            2023-10-23
         POWERSHELLEQUIVALENT
             Update-MgBetaPolicyDeviceRegistrationPolicy
         RECOMMENDEDBY
         UPDATECOMMENTBLOCK
             Run the Tools\Update-StandardsComments.ps1 script to update this comment block
     .LINK
-        https://docs.cipp.app/user-documentation/tenant/standards/edit-standards
+        https://docs.cipp.app/user-documentation/tenant/standards/list-standards/intune-standards#medium-impact
     #>
 
     param($Tenant, $Settings)
@@ -52,12 +53,14 @@ function Invoke-CIPPStandardintuneRequireMFA {
         if ($PreviousSetting.multiFactorAuthConfiguration -eq 'required') {
             Write-LogMessage -API 'Standards' -tenant $tenant -message 'Require to use MFA when joining/registering Entra Devices is enabled.' -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Require to use MFA when joining/registering Entra Devices is not enabled.' -sev Alert
+            Write-StandardsAlert -message 'Require to use MFA when joining/registering Entra Devices is not enabled' -object $PreviousSetting -tenant $tenant -standardName 'intuneRequireMFA' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Require to use MFA when joining/registering Entra Devices is not enabled.' -sev Info
         }
     }
 
     if ($Settings.report -eq $true) {
         $RequireMFA = if ($PreviousSetting.multiFactorAuthConfiguration -eq 'required') { $true } else { $false }
+        Set-CIPPStandardsCompareField -FieldName 'standards.intuneRequireMFA' -FieldValue $RequireMFA -Tenant $tenant
         Add-CIPPBPAField -FieldName 'intuneRequireMFA' -FieldValue $RequireMFA -StoreAs bool -Tenant $tenant
     }
 }
