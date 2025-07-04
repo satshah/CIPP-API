@@ -26,6 +26,7 @@ function Invoke-ExecPermissionRepair {
 
             $NewPermissions = @{}
             foreach ($AppId in $AppIds) {
+                if (!$AppId) { continue }
                 $ApplicationPermissions = [system.collections.generic.list[object]]::new()
                 $DelegatedPermissions = [system.collections.generic.list[object]]::new()
 
@@ -70,7 +71,7 @@ function Invoke-ExecPermissionRepair {
             $Body = @{
                 'Results' = 'Permissions Updated'
             }
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API 'ExecPermissionRepair' -message 'CIPP-SAM Permissions Updated' -Sev 'Info' -LogData $Permissions
+            Write-LogMessage -headers $Request.Headers -API 'ExecPermissionRepair' -message 'CIPP-SAM Permissions Updated' -Sev 'Info' -LogData $Permissions
         } else {
             $Body = @{
                 'Results' = 'No permissions to update'
