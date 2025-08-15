@@ -9,20 +9,20 @@ function Invoke-ListGraphRequest {
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-
+    $APIName = $Request.Params.CIPPEndpoint
+    $Headers = $Request.Headers
     $Message = 'Accessed this API | Endpoint: {0}' -f $Request.Query.Endpoint
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message $Message -Sev 'Debug'
+    Write-LogMessage -headers $Headers -API $APIName -message $Message -Sev 'Debug'
 
     $CippLink = ([System.Uri]$TriggerMetadata.Headers.Referer).PathAndQuery
 
     $Parameters = @{}
     if ($Request.Query.'$filter') {
-        $Parameters.'$filter' = $Request.Query.'$filter' -replace '%tenantid%', $env:TenantID
+        $Parameters.'$filter' = $Request.Query.'$filter'
     }
 
     if (!$Request.Query.'$filter' -and $Request.Query.graphFilter) {
-        $Parameters.'$filter' = $Request.Query.graphFilter -replace '%tenantid%', $env:TenantID
+        $Parameters.'$filter' = $Request.Query.graphFilter
     }
 
     if ($Request.Query.'$select') {
@@ -31,6 +31,10 @@ function Invoke-ListGraphRequest {
 
     if ($Request.Query.'$expand') {
         $Parameters.'$expand' = $Request.Query.'$expand'
+    }
+
+    if ($Request.Query.expand) {
+        $Parameters.'expand' = $Request.Query.expand
     }
 
     if ($Request.Query.'$top') {
@@ -120,11 +124,13 @@ function Invoke-ListGraphRequest {
 
     try {
         $Results = Get-GraphRequestList @GraphRequestParams
-        if ($Results.nextLink) {
-            Write-Host "NextLink: $($Results.nextLink | Select-Object -Last 1)"
-            $Metadata['nextLink'] = $Results.nextLink | Select-Object -Last 1
-            #Results is an array of objects, so we need to remove the last object before returning
-            $Results = $Results | Select-Object -First ($Results.Count - 1)
+        if ($Results | Where-Object { $_.PSObject.Properties.Name -contains 'nextLink' }) {
+            if (![string]::IsNullOrEmpty($Results.nextLink) -and $Request.Query.TenantFilter -ne 'AllTenants') {
+                Write-Host "NextLink: $($Results.nextLink | Where-Object { $_ } | Select-Object -Last 1)"
+                $Metadata['nextLink'] = $Results.nextLink | Where-Object { $_ } | Select-Object -Last 1
+            }
+            # Remove nextLink trailing object only if it’s the last item
+            $Results = $Results | Where-Object { $_.PSObject.Properties.Name -notcontains 'nextLink' }
         }
         if ($Request.Query.ListProperties) {
             $Columns = ($Results | Select-Object -First 1).PSObject.Properties.Name
@@ -137,6 +143,11 @@ function Invoke-ListGraphRequest {
                 $Results = @()
             }
         }
+
+        if ($Request.Headers.'x-ms-coldstart' -eq 1) {
+            $Metadata.ColdStart = $true
+        }
+
         $GraphRequestData = [PSCustomObject]@{
             Results  = @($Results)
             Metadata = $Metadata

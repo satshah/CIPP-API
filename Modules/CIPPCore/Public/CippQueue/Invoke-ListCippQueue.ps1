@@ -8,20 +8,17 @@ function Invoke-ListCippQueue {
     param($Request = $null, $TriggerMetadata = $null)
 
     if ($Request) {
-        $APIName = $TriggerMetadata.FunctionName
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-        # Write to the Azure Functions log stream.
-        Write-Host 'PowerShell HTTP trigger function processed a request.'
+        $APIName = $Request.Params.CIPPEndpoint
+        Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
     }
 
     $CippQueue = Get-CippTable -TableName 'CippQueue'
     $CippQueueTasks = Get-CippTable -TableName 'CippQueueTasks'
     $3HoursAgo = (Get-Date).ToUniversalTime().AddHours(-3).ToString('yyyy-MM-ddTHH:mm:ssZ')
-    $CippQueueData = Get-CIPPAzDataTableEntity @CippQueue -Filter "Timestamp ge datetime'$3HoursAgo'" | Sort-Object -Property Timestamp -Descending
+    $CippQueueData = Get-CIPPAzDataTableEntity @CippQueue -Filter "PartitionKey eq 'CippQueue' and Timestamp ge datetime'$3HoursAgo'" | Sort-Object -Property Timestamp -Descending
 
     $QueueData = foreach ($Queue in $CippQueueData) {
-        $Tasks = Get-CIPPAzDataTableEntity @CippQueueTasks -Filter "QueueId eq '$($Queue.RowKey)'" | Where-Object { $_.Name } | Select-Object @{n = 'Timestamp'; exp = { $_.Timestamp.DateTime.ToUniversalTime() } }, Name, Status
+        $Tasks = Get-CIPPAzDataTableEntity @CippQueueTasks -Filter "PartitionKey eq 'Task' and QueueId eq '$($Queue.RowKey)'" | Where-Object { $_.Name } | Select-Object @{n = 'Timestamp'; exp = { $_.Timestamp.DateTime.ToUniversalTime() } }, Name, Status
         $TaskStatus = @{}
         $Tasks | Group-Object -Property Status | ForEach-Object {
             $TaskStatus.$($_.Name) = $_.Count
