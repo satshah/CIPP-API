@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ListCSPsku {
+function Invoke-ListCSPsku {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -9,20 +7,28 @@ Function Invoke-ListCSPsku {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    # Interact with query parameters or the body of the request.
+    $TenantFilter = $Request.Query.tenantFilter
+    $CurrentSkuOnly = $Request.Query.currentSkuOnly
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-    if ($Request.Query.currentSkuOnly) {
-        $GraphRequest = Get-SherwebCurrentSubscription -TenantFilter $Request.Query.TenantFilter
-    } else {
-        $GraphRequest = Get-SherwebCatalog -TenantFilter $Request.Query.TenantFilter
+    try {
+        if ($CurrentSkuOnly) {
+            $GraphRequest = Get-SherwebCurrentSubscription -TenantFilter $TenantFilter
+        } else {
+            $GraphRequest = Get-SherwebCatalog -TenantFilter $TenantFilter
+        }
+        $StatusCode = [HttpStatusCode]::OK
+    } catch {
+        $GraphRequest = [PSCustomObject]@{
+            name = @(@{value = 'Error getting catalog' })
+            sku  = $_.Exception.Message
+        }
+        $StatusCode = [HttpStatusCode]::InternalServerError
     }
 
-
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::OK
-            Body       = @($GraphRequest)
-        }) -Clobber
+    return [HttpResponseContext]@{
+        StatusCode = $StatusCode
+        Body       = @($GraphRequest)
+    }
 
 }
