@@ -7,17 +7,22 @@ function Invoke-ListGraphBulkRequest {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    $TenantFilter = $Request.Body.tenantFilter
+    $AsApp = $Request.Body.asApp
+    $Requests = $Request.Body.requests
+    $NoPaginateIds = $Request.Body.noPaginateIds
 
     $GraphRequestParams = @{
-        tenantid = $Request.Body.tenantFilter
-        Requests = @()
+        tenantid      = $TenantFilter
+        Requests      = @()
+        NoPaginateIds = $NoPaginateIds ?? @()
     }
 
-    if ($Request.Body.asapp) {
-        $GraphRequestParams.asapp = $Request.Body.asApp
+    if ($AsApp) {
+        $GraphRequestParams.asapp = $AsApp
     }
 
-    $BulkRequests = foreach ($GraphRequest in $Request.Body.requests) {
+    $BulkRequests = foreach ($GraphRequest in $Requests) {
         if ($GraphRequest.method -eq 'GET') {
             @{
                 id     = $GraphRequest.id
@@ -48,5 +53,5 @@ function Invoke-ListGraphBulkRequest {
         }
     }
 
-    Push-OutputBinding -Name Response -Value $Results
+    return [HttpResponseContext]$Results
 }
