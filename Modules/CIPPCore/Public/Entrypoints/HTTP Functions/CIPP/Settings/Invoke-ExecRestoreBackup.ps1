@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ExecRestoreBackup {
+function Invoke-ExecRestoreBackup {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -10,23 +8,35 @@ Function Invoke-ExecRestoreBackup {
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
     try {
 
         if ($Request.Body.BackupName -like 'CippBackup_*') {
-            $Table = Get-CippTable -tablename 'CIPPBackup'
-            $Backup = Get-CippAzDataTableEntity @Table -Filter "RowKey eq '$($Request.Body.BackupName)'"
+            # Use Get-CIPPBackup which already handles fetching from blob storage
+            $Backup = Get-CIPPBackup -Type 'CIPP' -Name $Request.Body.BackupName
             if ($Backup) {
-                $BackupData = $Backup.Backup | ConvertFrom-Json -ErrorAction SilentlyContinue | Select-Object * -ExcludeProperty ETag, Timestamp
+                $raw = $Backup.Backup
+                $BackupData = $null
+
+                # Get-CIPPBackup already fetches blob content, so raw should be JSON string
+                try {
+                    if ($raw -is [string]) {
+                        $BackupData = $raw | ConvertFrom-Json -ErrorAction Stop
+                    } else {
+                        $BackupData = $raw | Select-Object * -ExcludeProperty ETag, Timestamp
+                    }
+                } catch {
+                    throw "Failed to parse backup JSON: $($_.Exception.Message)"
+                }
+
                 $BackupData | ForEach-Object {
                     $Table = Get-CippTable -tablename $_.table
-                    $ht2 = @{ }
+                    $ht2 = @{}
                     $_.psobject.properties | ForEach-Object { $ht2[$_.Name] = [string]$_.Value }
                     $Table.Entity = $ht2
                     Add-CIPPAzDataTableEntity @Table -Force
                 }
-                Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Created backup' -Sev 'Debug'
+                Write-LogMessage -headers $Request.Headers -API $APINAME -message "Restored backup $($Request.Body.BackupName)" -Sev 'Info'
                 $body = [pscustomobject]@{
                     'Results' = 'Successfully restored backup.'
                 }
@@ -41,22 +51,21 @@ Function Invoke-ExecRestoreBackup {
                 $ht2 = @{}
                 $line.psobject.properties | ForEach-Object { $ht2[$_.Name] = [string]$_.Value }
                 $Table.Entity = $ht2
-                Add-CIPPAzDataTableEntity @Table -Force
+                Add-AzDataTableEntity @Table -Force
             }
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Created backup' -Sev 'Debug'
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message "Restored backup $($Request.Body.BackupName)" -Sev 'Info'
 
             $body = [pscustomobject]@{
                 'Results' = 'Successfully restored backup.'
             }
         }
     } catch {
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Failed to restore backup: $($_.Exception.Message)" -Sev 'Error'
+        Write-LogMessage -headers $Request.Headers -API $APINAME -message "Failed to restore backup: $($_.Exception.Message)" -Sev 'Error'
         $body = [pscustomobject]@{'Results' = "Backup restore failed: $($_.Exception.Message)" }
     }
 
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $body
         })
