@@ -1,5 +1,3 @@
-using namespace System.Net
-
 Function Invoke-ListBreachesAccount {
     <#
     .FUNCTIONALITY
@@ -9,20 +7,18 @@ Function Invoke-ListBreachesAccount {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    # Interact with query parameters or the body of the request.
+    $Account = $Request.Query.account
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-    if ($request.query.account -like '*@*') {
-        $Results = Get-HIBPRequest "breachedaccount/$($Request.query.account)?truncateResponse=false"
+    if ($Account -like '*@*') {
+        $Results = Get-HIBPRequest "breachedaccount/$($Account)?truncateResponse=false"
     } else {
-        $Results = Get-BreachInfo -Domain $Request.query.account
+        $Results = Get-BreachInfo -Domain $Account
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return [HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = @($results)
-        })
+        }
 
 }

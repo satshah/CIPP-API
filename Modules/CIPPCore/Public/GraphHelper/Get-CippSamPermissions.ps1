@@ -25,8 +25,8 @@ function Get-CippSamPermissions {
 
     if (!$SavedOnly.IsPresent) {
         $ModuleBase = Get-Module -Name CIPPCore | Select-Object -ExpandProperty ModuleBase
-        $SamManifestFile = Get-Item (Join-Path $ModuleBase 'Public\SAMManifest.json')
-        $AdditionalPermissions = Get-Item (Join-Path $ModuleBase 'Public\AdditionalPermissions.json')
+        $SamManifestFile = Get-Item (Join-Path $ModuleBase 'lib\data\SAMManifest.json')
+        $AdditionalPermissions = Get-Item (Join-Path $ModuleBase 'lib\data\AdditionalPermissions.json')
 
         $ServicePrincipalList = New-GraphGetRequest -Uri 'https://graph.microsoft.com/beta/servicePrincipals?$top=999&$select=id,appId,displayName' -tenantid $env:TenantID -NoAuthCheck $true
         $SAMManifest = Get-Content -Path $SamManifestFile.FullName | ConvertFrom-Json
@@ -112,7 +112,11 @@ function Get-CippSamPermissions {
     $Table = Get-CippTable -tablename 'AppPermissions'
     $SavedPermissions = Get-CippAzDataTableEntity @Table -Filter "PartitionKey eq 'CIPP-SAM' and RowKey eq 'CIPP-SAM'"
     if ($SavedPermissions.Permissions) {
-        $SavedPermissions.Permissions = $SavedPermissions.Permissions | ConvertFrom-Json
+        try {
+            $SavedPermissions.Permissions = $SavedPermissions.Permissions | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            $SavedPermissions.Permissions = [PSCustomObject]@{}
+        }
     } else {
         $SavedPermissions = @{
             Permissions = [PSCustomObject]@{}
@@ -174,7 +178,11 @@ function Get-CippSamPermissions {
             'UpdatedBy'    = 'CIPP'
         }
         $Table = Get-CIPPTable -TableName 'AppPermissions'
-        $null = Add-CIPPAzDataTableEntity @Table -Entity $Entity -Force
+        try {
+            $null = Add-CIPPAzDataTableEntity @Table -Entity $Entity -Force
+        } catch {
+            Write-Error "Failed to save the CIPP-SAM permissions: $($_.Exception.Message)"
+        }
     }
 
     if (!$NoDiff.IsPresent -and $SamAppPermissions.Type -eq 'Table') {

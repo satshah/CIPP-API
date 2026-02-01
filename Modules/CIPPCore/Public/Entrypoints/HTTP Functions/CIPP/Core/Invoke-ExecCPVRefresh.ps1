@@ -10,18 +10,16 @@ function Invoke-ExecCPVRefresh {
     CIPP.Core.ReadWrite
     #>
     [CmdletBinding()]
-    param(
-        $Request,
-        $TriggerMetadata
-    )
-
+    param($Request, $TriggerMetadata)
     $InstanceId = Start-UpdatePermissionsOrchestrator
 
-    Push-OutputBinding -Name Response -Value @{
+    return @{
         StatusCode = [System.Net.HttpStatusCode]::OK
         Body       = @{
-            Results    = 'CPV Refresh has been triggered'
-            InstanceId = $InstanceId
+            Results  = 'CPV Refresh has been triggered'
+            Metadata = @{
+                InstanceId = $InstanceId
+            }
         }
     }
 }

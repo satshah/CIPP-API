@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ExecListBackup {
+function Invoke-ExecListBackup {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -9,31 +7,52 @@ Function Invoke-ExecListBackup {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    $Type = $Request.Query.Type
+    $TenantFilter = $Request.Query.tenantFilter
+    $NameOnly = $Request.Query.NameOnly
+    $BackupName = $Request.Query.BackupName
 
     $CippBackupParams = @{}
-    if ($Request.Query.Type) {
-        $CippBackupParams.Type = $Request.Query.Type
-    }
-    if ($Request.Query.TenantFilter) {
-        $CippBackupParams.TenantFilter = $Request.Query.TenantFilter
-    }
-    if ($Request.Query.NameOnly) {
-        $CippBackupParams.NameOnly = $true
-    }
-    if ($Request.Query.BackupName) {
-        $CippBackupParams.Name = $Request.Query.BackupName
-    }
+    if ($Type) { $CippBackupParams.Type = $Type }
+    if ($TenantFilter) { $CippBackupParams.TenantFilter = $TenantFilter }
+    if ($BackupName) { $CippBackupParams.Name = $BackupName }
 
     $Result = Get-CIPPBackup @CippBackupParams
-    Write-Host ($Result | ConvertTo-Json)
-    if ($request.Query.NameOnly) {
-        $Result = $Result | Select-Object @{Name = 'BackupName'; exp = { $_.RowKey } }, Timestamp | Sort-Object Timestamp -Descending
+
+    if ($NameOnly) {
+        $Processed = foreach ($item in $Result) {
+            $properties = $item.PSObject.Properties | Where-Object { $_.Name -notin @('TenantFilter', 'ETag', 'PartitionKey', 'RowKey', 'Timestamp', 'OriginalEntityId', 'SplitOverProps', 'PartIndex') -and $_.Value }
+
+            if ($Type -eq 'Scheduled') {
+                [PSCustomObject]@{
+                    TenantFilter = $item.RowKey -match '^(.*?)_' | ForEach-Object { $matches[1] }
+                    BackupName   = $item.RowKey
+                    Timestamp    = $item.Timestamp
+                    Items        = $properties.Name
+                }
+            } else {
+                # Prefer stored indicator (BackupIsBlob) to avoid reading Backup field
+                $isBlob = $false
+                if ($null -ne $item.PSObject.Properties['BackupIsBlob']) {
+                    try { $isBlob = [bool]$item.BackupIsBlob } catch { $isBlob = $false }
+                } else {
+                    # Fallback heuristic for legacy rows if property missing
+                    if ($null -ne $item.PSObject.Properties['Backup']) {
+                        $b = $item.Backup
+                        if ($b -is [string] -and ($b -like 'https://*' -or $b -like 'http://*')) { $isBlob = $true }
+                    }
+                }
+                [PSCustomObject]@{
+                    BackupName = $item.RowKey
+                    Timestamp  = $item.Timestamp
+                    Source     = if ($isBlob) { 'blob' } else { 'table' }
+                }
+            }
+        }
+        $Result = $Processed | Sort-Object Timestamp -Descending
     }
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API 'Alerts' -message $request.body.text -Sev $request.body.Severity
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = @($Result)
         })
-
 }
