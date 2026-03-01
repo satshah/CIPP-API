@@ -16,7 +16,7 @@ function Invoke-ExecAppUpload {
             $ProcessorFunction = [PSCustomObject]@{
                 PartitionKey = 'Function'
                 RowKey       = 'Start-ApplicationOrchestrator'
-
+                FunctionName = 'Start-ApplicationOrchestrator'
             }
             $ProcessorQueue = Get-CIPPTable -TableName 'ProcessorQueue'
             Add-AzDataTableEntity @ProcessorQueue -Entity $ProcessorFunction -Force
@@ -31,7 +31,7 @@ function Invoke-ExecAppUpload {
         }
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $Results
         })

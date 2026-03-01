@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ExecBreachSearch {
+function Invoke-ExecBreachSearch {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -9,15 +7,14 @@ Function Invoke-ExecBreachSearch {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    # Interact with query parameters or the body of the request.
+    $TenantFilter = $Request.body.tenantFilter
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-    $TenantFilter = $Request.query.TenantFilter
     #Move to background job
     New-BreachTenantSearch -TenantFilter $TenantFilter
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
-            Body       = @{ Results = "Executing Search for $TenantFilter" }
+            Body       = @{ Results = "Executing Search for $TenantFilter. This may take up to 24 hours to complete." }
         })
 
 }

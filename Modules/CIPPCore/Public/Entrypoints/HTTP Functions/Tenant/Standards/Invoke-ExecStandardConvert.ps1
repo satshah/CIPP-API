@@ -1,5 +1,3 @@
-using namespace System.Net
-
 function Invoke-ExecStandardConvert {
     <#
     .FUNCTIONALITY
@@ -108,7 +106,7 @@ function Invoke-ExecStandardConvert {
             } else { $StdKey }
             $IsArrayStandard = ($NewStdKey -eq 'IntuneTemplate' -or $NewStdKey -eq 'ConditionalAccessTemplate')
             $ConvertedObj = Convert-SingleStandardItem $OldStd
-            if ($ConvertedObj -eq $null) {
+            if ($null -eq $ConvertedObj) {
                 continue
             }
 
@@ -173,7 +171,7 @@ function Invoke-ExecStandardConvert {
     $OldStandards = (Get-CIPPAzDataTableEntity @Table -Filter $Filter).JSON | ConvertFrom-Json
 
     $AllTenantsStd = $OldStandards | Where-Object { $_.Tenant -eq 'AllTenants' }
-    $HasAllTenants = $AllTenantsStd -ne $null
+    $HasAllTenants = $null -ne $AllTenantsStd
 
     $AllTenantsExclusions = New-Object System.Collections.ArrayList
     $StandardsToConvert = New-Object System.Collections.ArrayList
@@ -204,7 +202,7 @@ function Invoke-ExecStandardConvert {
         $Converted | Add-Member -NotePropertyName 'createdAt' -NotePropertyValue ((Get-Date).ToUniversalTime()) -Force
         $Converted | Add-Member -NotePropertyName 'updatedBy' -NotePropertyValue 'System' -Force
         $Converted | Add-Member -NotePropertyName 'updatedAt' -NotePropertyValue (Get-Date).ToUniversalTime() -Force
-        $JSON = ConvertTo-Json -Depth 40 -InputObject $Converted
+        $JSON = ConvertTo-Json -Depth 100 -InputObject $Converted -Compress
 
         $Table = Get-CippTable -tablename 'templates'
         $Table.Force = $true
@@ -231,8 +229,7 @@ function Invoke-ExecStandardConvert {
         }
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = 'Successfully converted legacy standards to new format'
         })

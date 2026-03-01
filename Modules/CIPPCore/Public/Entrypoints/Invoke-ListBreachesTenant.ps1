@@ -1,6 +1,4 @@
-using namespace System.Net
-
-Function Invoke-ListBreachesTenant {
+function Invoke-ListBreachesTenant {
     <#
     .FUNCTIONALITY
         Entrypoint
@@ -9,22 +7,27 @@ Function Invoke-ListBreachesTenant {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+    $TenantFilter = $Request.Query.tenantFilter
 
-    $TenantFilter = $Request.query.TenantFilter
     $Table = Get-CIPPTable -TableName UserBreaches
     if ($TenantFilter -ne 'AllTenants') {
         $filter = "PartitionKey eq '$TenantFilter'"
     } else {
         $filter = $null
     }
-    $usersResults = (Get-CIPPAzDataTableEntity @Table -Filter $filter).breaches | ConvertFrom-Json -ErrorAction SilentlyContinue
-    if ($usersResults -eq $null) {
+    try {
+        $Tenants = Get-Tenants -IncludeErrors
+        $Rows = Get-CIPPAzDataTableEntity @Table -Filter $filter | Where-Object { $Tenants.defaultDomainName -contains $_.PartitionKey }
+        $usersResults = $Rows.breaches | ConvertFrom-Json -ErrorAction SilentlyContinue
+    } catch {
+        $usersResults = $null
+    }
+    if ($null -eq $usersResults) {
         $usersResults = @()
     }
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::OK
-            Body       = @($usersResults)
-        })
+    return [HttpResponseContext]@{
+        StatusCode = [HttpStatusCode]::OK
+        Body       = @($usersResults)
+    }
 
 }

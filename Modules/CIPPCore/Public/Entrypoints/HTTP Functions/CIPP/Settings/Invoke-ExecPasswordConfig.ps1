@@ -1,5 +1,3 @@
-using namespace System.Net
-
 Function Invoke-ExecPasswordConfig {
     <#
     .FUNCTIONALITY
@@ -9,15 +7,10 @@ Function Invoke-ExecPasswordConfig {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
     $Table = Get-CIPPTable -TableName Settings
     $PasswordType = (Get-CIPPAzDataTableEntity @Table)
 
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
+
     $results = try {
         if ($Request.Query.List) {
             @{ passwordType = $PasswordType.passwordType }
@@ -39,8 +32,7 @@ Function Invoke-ExecPasswordConfig {
 
     $body = [pscustomobject]@{'Results' = $Results }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $body
         })

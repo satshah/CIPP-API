@@ -1,20 +1,12 @@
-using namespace System.Net
-
 Function Invoke-ListExtensionSync {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         CIPP.Extension.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
     $ScheduledTasksTable = Get-CIPPTable -TableName 'ScheduledTasks'
     $ScheduledTasks = Get-CIPPAzDataTableEntity @ScheduledTasksTable -Filter 'Hidden eq true' | Where-Object { $_.Command -match 'CippExtension' }
 
@@ -51,8 +43,8 @@ Function Invoke-ListExtensionSync {
         }
     }
 
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
-            Body       = ConvertTo-Json -Depth 5 -InputObject @($AllTasksArrayList)
+            Body       = (ConvertTo-Json -Depth 5 -InputObject @($AllTasksArrayList))
         })
 }
