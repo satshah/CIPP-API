@@ -8,30 +8,56 @@ function Set-PwPushConfig {
 
     .PARAMETER Configuration
     Configuration object
+
+    .PARAMETER FullConfiguration
+    Full parsed configuration object including CFZTNA settings
     #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
-        $Configuration
+        $Configuration,
+        $FullConfiguration
     )
     $InitParams = @{}
     if ($Configuration.BaseUrl) {
         $InitParams.BaseUrl = $Configuration.BaseUrl
     }
-    if (![string]::IsNullOrEmpty($Configuration.EmailAddress)) {
-        if ($env:AzureWebJobsStorage -eq 'UseDevelopmentStorage=true') {
-            $DevSecretsTable = Get-CIPPTable -tablename 'DevSecrets'
-            $ApiKey = (Get-CIPPAzDataTableEntity @DevSecretsTable -Filter "PartitionKey eq 'PWPush' and RowKey eq 'PWPush'").APIKey
-        } else {
-            $null = Connect-AzAccount -Identity
-            $VaultName = ($ENV:WEBSITE_DEPLOYMENT_ID -split '-')[0]
-            $ApiKey = Get-AzKeyVaultSecret -VaultName $VaultName -Name 'PWPush' -AsPlainText
-        }
-        if (![string]::IsNullOrEmpty($ApiKey)) {
+    if (![string]::IsNullOrEmpty($Configuration.EmailAddress) -or $Configuration.UseBearerAuth -eq $true) {
+        $ApiKey = Get-ExtensionAPIKey -Extension 'PWPush'
+        if ($Configuration.UseBearerAuth -eq $true) {
+            $InitParams.Bearer = $ApiKey
+        } elseif (![string]::IsNullOrEmpty($ApiKey)) {
+            if (![string]::IsNullOrEmpty($Configuration.EmailAddress)) {
+                $InitParams.EmailAddress = $Configuration.EmailAddress
+            }
             $InitParams.APIKey = $ApiKey
-            $InitParams.EmailAddress = $Configuration.EmailAddress
         }
     }
+
+    $Module = Get-Module PassPushPosh -ListAvailable
+    Write-Information "PWPush Version: $($Module.Version)"
     if ($PSCmdlet.ShouldProcess('Initialize-PassPushPosh')) {
-        Initialize-PassPushPosh @InitParams
+        $LogParams = @{} + $InitParams
+        foreach ($Secret in 'APIKey', 'Bearer') {
+            if ($LogParams.ContainsKey($Secret)) { $LogParams[$Secret] = 'REDACTED' }
+        }
+        Write-Information ($LogParams | ConvertTo-Json)
+        # -Force: workers are long-lived and shared, and without it Initialize-PassPushPosh is a
+        # no-op after a worker's first call - the worker then keeps the auth headers and base URL
+        # from whatever configuration it saw first, so config changes and key rotations never land.
+        Initialize-PassPushPosh @InitParams -Force
+    }
+
+    if ($Configuration.CFEnabled -eq $true -and $FullConfiguration.CFZTNA.Enabled -eq $true) {
+        $CFAPIKey = Get-ExtensionAPIKey -Extension 'CFZTNA'
+        $PPPModule = Get-Module PassPushPosh
+        & $PPPModule {
+            if (-not $Script:PPPHeaders) {
+                $Script:PPPHeaders = @{}
+            }
+            $Script:PPPHeaders['CF-Access-Client-Id'] = $args[0]
+            $Script:PPPHeaders['CF-Access-Client-Secret'] = $args[1]
+        } $FullConfiguration.CFZTNA.ClientId "$CFAPIKey"
+        Write-Information 'CF-Access-Client-Id and CF-Access-Client-Secret headers added to PWPush API request'
     }
 }
+
