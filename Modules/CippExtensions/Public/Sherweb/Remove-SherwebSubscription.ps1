@@ -4,13 +4,47 @@ function Remove-SherwebSubscription {
         [string]$CustomerId,
         [Parameter(Mandatory = $true)]
         [string[]]$SubscriptionIds,
-        [string]$TenantFilter
+        [string]$TenantFilter,
+        $Headers
     )
-    if ($TenantFilter) {
-        Get-ExtensionMapping -Extension 'Sherweb' | Where-Object { $_.RowKey -eq $TenantFilter } | ForEach-Object {
-            Write-Host "Extracted customer id from tenant filter - It's $($_.IntegrationId)"
-            $CustomerId = $_.IntegrationId
+
+    if ($Headers) {
+        # Get extension config and check for AllowedCustomRoles
+        $Table = Get-CIPPTable -TableName Extensionsconfig
+        $ExtensionConfig = (Get-CIPPAzDataTableEntity @Table).config | ConvertFrom-Json
+        $Config = $ExtensionConfig.Sherweb
+
+        $AllowedRoles = $Config.AllowedCustomRoles.value
+        if ($AllowedRoles) {
+            # Resolve caller roles for both interactive users and direct API clients,
+            # mirroring the principal detection Test-CIPPAccess/Test-CippApiClientRoleGrant use.
+            if ($Headers.'x-ms-client-principal-idp' -eq 'aad' -and $Headers.'x-ms-client-principal-name' -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+                $Client = Get-CippApiClient -AppId $Headers.'x-ms-client-principal-name'
+                $CallerRoles = if ($Client.Role) { @($Client.Role) } else { @('cipp-api') }
+            } elseif ($Headers.'x-ms-client-principal') {
+                $CallerRoles = @(Get-CIPPAccessRole -Headers $Headers)
+            } else {
+                $CallerRoles = @()
+            }
+
+            $Allowed = $false
+            foreach ($Role in $CallerRoles) {
+                if ($AllowedRoles -contains $Role) {
+                    Write-Information "Caller has allowed CIPP role: $Role"
+                    $Allowed = $true
+                    break
+                }
+            }
+            if (-not $Allowed) {
+                throw 'This caller is not allowed to modify Sherweb Licenses.'
+            }
         }
+    }
+
+
+    if ($TenantFilter) {
+        $TenantFilter = (Get-Tenants -TenantFilter $TenantFilter).customerId
+        $CustomerId = Get-ExtensionMapping -Extension 'Sherweb' | Where-Object { $_.RowKey -eq $TenantFilter } | Select-Object -ExpandProperty IntegrationId
     }
     $AuthHeader = Get-SherwebAuthentication
     $Body = ConvertTo-Json -Depth 10 -InputObject @{
