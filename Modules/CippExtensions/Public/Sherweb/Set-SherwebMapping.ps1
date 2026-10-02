@@ -6,7 +6,7 @@ function Set-SherwebMapping {
         $Request
     )
     Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'SherwebMapping'" | ForEach-Object {
-        Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
+        Remove-CIPPAzDataTableEntity -Force @CIPPMapping -Entity $_
     }
     foreach ($Mapping in $Request.Body) {
         Write-Host "Adding mapping for $($mapping.IntegrationId)"
@@ -18,7 +18,7 @@ function Set-SherwebMapping {
         }
 
         Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
-        Write-LogMessage -API $APINAME -user $request.headers.'x-ms-client-principal' -message "Added mapping for $($mapping.name)." -Sev 'Info'
+        Write-LogMessage -API $APINAME -headers $Request.Headers -message "Added mapping for $($mapping.name)." -Sev 'Info'
     }
     $Result = [pscustomobject]@{'Results' = 'Successfully edited mapping table.' }
 

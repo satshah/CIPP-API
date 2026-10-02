@@ -1,22 +1,11 @@
 function Get-NinjaOneToken {
     [CmdletBinding()]
     param (
-        $Configuration
+        $Configuration,
+        $WebSession
     )
 
-
-    if (!$ENV:NinjaClientSecret) {
-        if ($env:AzureWebJobsStorage -eq 'UseDevelopmentStorage=true') {
-            $DevSecretsTable = Get-CIPPTable -tablename 'DevSecrets'
-            $ClientSecret = (Get-CIPPAzDataTableEntity @DevSecretsTable -Filter "PartitionKey eq 'NinjaOne' and RowKey eq 'NinjaOne'").APIKey
-        } else {
-            $null = Connect-AzAccount -Identity
-            $keyvaultname = ($ENV:WEBSITE_DEPLOYMENT_ID -split '-')[0]
-            $ClientSecret = (Get-AzKeyVaultSecret -VaultName $keyvaultname -Name 'NinjaOne' -AsPlainText)
-        }
-    } else {
-        $ClientSecret = $ENV:NinjaClientSecret
-    }
+    $ClientSecret = Get-ExtensionAPIKey -Extension 'NinjaOne'
 
     $body = @{
         grant_type    = 'client_credentials'
@@ -25,9 +14,11 @@ function Get-NinjaOneToken {
         scope         = 'monitoring management'
     }
 
+    $SessionParams = if ($WebSession) { @{ WebSession = $WebSession } } else { @{} }
+
     try {
 
-        $token = Invoke-RestMethod -Uri "https://$($Configuration.Instance -replace '/ws','')/ws/oauth/token" -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded'
+        $token = Invoke-RestMethod @SessionParams -Uri "https://$($Configuration.Instance -replace '/ws','')/ws/oauth/token" -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded'
     } catch {
         $Message = if ($_.ErrorDetails.Message) {
             Get-NormalizedError -Message $_.ErrorDetails.Message

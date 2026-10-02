@@ -1,34 +1,46 @@
-
 function Merge-CippStandards {
     param(
-        [Parameter(Mandatory = $true)] $Existing,
-        [Parameter(Mandatory = $true)] $CurrentStandard
+        [Parameter(Mandatory = $true)][object]$Existing,
+        [Parameter(Mandatory = $true)][object]$New,
+        [Parameter(Mandatory = $true)][string]$StandardName
     )
-    $Existing = [pscustomobject]$Existing
-    $CurrentStandard = [pscustomobject]$CurrentStandard
-    $ExistingActionValues = @()
-    if ($Existing.PSObject.Properties.Name -contains 'action') {
-        if ($Existing.action -and $Existing.action.value) {
-            $ExistingActionValues = @($Existing.action.value)
-        }
-        $null = $Existing.PSObject.Properties.Remove('action')
-    }
 
-    $CurrentActionValues = @()
-    if ($CurrentStandard.PSObject.Properties.Name -contains 'action') {
-        if ($CurrentStandard.action -and $CurrentStandard.action.value) {
-            $CurrentActionValues = @($CurrentStandard.action.value)
-        }
-        $null = $CurrentStandard.PSObject.Properties.Remove('action')
-    }
-    $AllActionValues = ($ExistingActionValues + $CurrentActionValues) | Select-Object -Unique
-    foreach ($prop in $CurrentStandard.PSObject.Properties) {
-        if ($prop.Name -eq 'action') { continue }
-        $Existing | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
-    }
-    if ($AllActionValues.Count -gt 0) {
-        $Existing | Add-Member -NotePropertyName 'combinedActions' -NotePropertyValue $AllActionValues -Force
-    }
+    # If $Existing or $New is $null/empty, just return the other.
+    if (-not $Existing) { return $New }
+    if (-not $New) { return $Existing }
 
-    return $Existing
+    # If the standard name ends with 'Template', we treat them as arrays to merge.
+    if ($StandardName -like '*Template') {
+        # Combine both tiers, then collapse duplicates that target the same template
+        # (same TemplateList.value). Without this, the same Intune/CA template configured
+        # in more than one tier (or in more than one standard) for a tenant gets
+        # concatenated into a multi-element array, which downstream stringifies into a
+        # doubled GUID ("Failed to find template <guid> <guid>") that matches no RowKey.
+        #
+        # The standards engine already keys each template instance by TemplateList.value,
+        # so when this function runs the items share a template GUID and should resolve to
+        # a single deployment. Items without a TemplateList.value can't be keyed, so they
+        # are always kept (preserves the additive behaviour for those).
+        $Combined = @($Existing) + @($New)
+
+        $Deduped = [System.Collections.Generic.List[object]]::new()
+        $SeenValues = [System.Collections.Generic.HashSet[string]]::new()
+        # Walk newest-first so the most-specific tier wins for a given template, while
+        # Insert(0, ...) keeps the overall ordering stable.
+        for ($i = $Combined.Count - 1; $i -ge 0; $i--) {
+            $Item = $Combined[$i]
+            $TemplateValue = $Item.TemplateList.value
+            if ([string]::IsNullOrEmpty($TemplateValue)) {
+                $Deduped.Insert(0, $Item)
+            } elseif ($SeenValues.Add([string]$TemplateValue)) {
+                $Deduped.Insert(0, $Item)
+            }
+        }
+
+        if ($Deduped.Count -eq 1) { return $Deduped[0] }
+        return $Deduped.ToArray()
+    } else {
+        # Single‐value standard: override the old with the new
+        return $New
+    }
 }

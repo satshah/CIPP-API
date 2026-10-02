@@ -6,7 +6,7 @@ function Set-HuduMapping {
         $Request
     )
     Get-CIPPAzDataTableEntity @CIPPMapping -Filter "PartitionKey eq 'HuduMapping'" | ForEach-Object {
-        Remove-AzDataTableEntity -Force @CIPPMapping -Entity $_
+        Remove-CIPPAzDataTableEntity -Force @CIPPMapping -Entity $_
     }
     foreach ($Mapping in $Request.Body) {
         $AddObject = @{
@@ -17,7 +17,7 @@ function Set-HuduMapping {
         }
 
         Add-CIPPAzDataTableEntity @CIPPMapping -Entity $AddObject -Force
-        Write-LogMessage -API $APINAME -user $request.headers.'x-ms-client-principal' -message "Added mapping for $($mapping.name)." -Sev 'Info'
+        Write-LogMessage -API $APINAME -headers $Request.Headers -message "Added mapping for $($mapping.name)." -Sev 'Info'
     }
     $Result = [pscustomobject]@{'Results' = 'Successfully edited mapping table.' }
 
